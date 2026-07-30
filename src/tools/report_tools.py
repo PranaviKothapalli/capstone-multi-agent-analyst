@@ -7,6 +7,7 @@ crashing the whole pipeline (see README for installing the system deps).
 """
 from __future__ import annotations
 import os
+import base64
 import datetime
 import html as html_lib
 
@@ -95,8 +96,17 @@ def build_html_report(
 
     chart_blocks = ""
     for path in chart_paths or []:
-        abs_path = os.path.abspath(path)
-        chart_blocks += f'<img class="chart" src="file://{abs_path}"><br>'
+        try:
+            with open(path, "rb") as img:
+                encoded = base64.b64encode(img.read()).decode("utf-8")
+
+            chart_blocks += f"""
+            <img class="chart"
+                src="data:image/png;base64,{encoded}">
+            <br>
+            """
+        except Exception:
+            continue
 
     exec_summary = narrative.split("\n\n")[0] if narrative else (
         f"This report summarizes the automated analysis of '{dataset_name}', covering data quality, "
@@ -127,11 +137,22 @@ def compile_pdf(html_content: str, out_path: str) -> tuple[str, bool]:
     to the requested pdf path if WeasyPrint's native dependencies are missing."""
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     try:
-        from weasyprint import HTML  # imported lazily: heavy + needs system libs
-        HTML(string=html_content, base_url=".").write_pdf(out_path)
+        from weasyprint import HTML
+
+        HTML(
+            string=html_content,
+            base_url="."
+        ).write_pdf(out_path)
+
         return out_path, True
-    except Exception:
+
+    except Exception as e:
+
+        print(f"PDF generation failed: {e}")
+
         html_path = out_path.replace(".pdf", ".html")
+
         with open(html_path, "w", encoding="utf-8") as f:
             f.write(html_content)
+
         return html_path, False
